@@ -520,6 +520,25 @@ impl<const R: usize, const N: usize, const F: usize> RingProducer<R, N, F> {
     pub fn reserve(&self, count: usize) -> Result<RingIterator<R, N, F>, ()> {
         let ring = unsafe { &mut *self.ring.get() };
 
+        // NOTE: There are two atomic reads here and then we perform a number of
+        // operations based on the result of those reads. At face value this is
+        // a red flag so some explanation is warranted here.
+        //
+        // First: there is no race on reads of rsvd. Only the producer can move
+        // rsvd, and this data structure is explicitly single-producer
+        // single-consumer (SPSC). Operations on the consumer itself are not
+        // thread safe. That is why the consumer is not clonable, or sync - only
+        // send.  A consumer can only be moved to another thread.
+        //
+        // Second: evaluating an invariant that involves the tail at time t and
+        // then performing a series of operations based on that invariant over
+        // time n until t+n is also not a race. As noted rsvd can only be moved
+        // by us so we're good there. But we also benefit from the fact that all
+        // the indices are strictly increasing. So if the invariant r < t+R
+        // is true, the only way it can become false is by moving r. So there is
+        // no way the consumer thread can concurrently invalidate our assesment
+        // of the invariant.
+
         // Enforce ring invariant r < t+R
         let (t_epoch, t) = read_index(ring.tail.load(Ordering::Relaxed));
         let (mut r_epoch, r) = read_index(ring.rsvd.load(Ordering::Relaxed));
@@ -632,11 +651,6 @@ impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug
     }
 }
 
-unsafe impl<const R: usize, const N: usize, const F: usize> Sync
-    for RingProducer<R, N, F>
-{
-}
-
 unsafe impl<const R: usize, const N: usize, const F: usize> Send
     for RingProducer<R, N, F>
 {
@@ -730,11 +744,6 @@ impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug
             .field("ring", unsafe { &*self.ring.get() })
             .finish()
     }
-}
-
-unsafe impl<const R: usize, const N: usize, const F: usize> Sync
-    for RingConsumer<R, N, F>
-{
 }
 
 unsafe impl<const R: usize, const N: usize, const F: usize> Send
