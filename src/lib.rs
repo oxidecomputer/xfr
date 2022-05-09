@@ -25,8 +25,8 @@
 //! a set of rings that provide access into an underlying frame buffer. In the
 //! diagram below each interface is connected to an ingress ring (upper) that it
 //! uses to buffer packets that are ready for further processing. Each interface
-//! is also connected to an egress ring (lower) that it consumes packets that
-//! are ready to put on the wire.
+//! is also connected to an egress ring (lower) that it consumes packets from
+//! that are ready to be put on the wire.
 //!
 //! ```text
 //!                        h
@@ -99,8 +99,8 @@
 //! ownership from the producer to the consumer. When the packet engine has
 //! finished processing the frames, it can call `consume(3)` to move the tail
 //! index forward 3 frame pointers. At this point, assuming there have been no
-//! new packets produced there are no frames to produce and no frames to consume
-//! on the ingress ring.
+//! new packets produced, there are no frames to produce and no frames to
+//! consume on the ingress ring.
 //!
 //! ```text
 //!                             t
@@ -171,9 +171,6 @@
 //!                                      t
 //! ```
 //!
-//! At this point the consumer will also free the frames it allocated from the
-//! frame buffer by calling `free(index, count)`.
-//!
 //! Tada! We've processed a pile of packets without copying any frame data. The
 //! rings are a thread-safe mechanism for producers and consumers of packet
 //! frames to exchange ownership of frames through pointers.
@@ -184,8 +181,7 @@
 //! The Ring data structure is able to work in a lock-free way because of a few
 //! key invariants, combined with a notion of epochs. When an index rolls over
 //! to the beginning of the ring it enters a new epoch of that ring. The
-//! invariants can be summarized in the following inequality.
-//!
+//! ring invariants can be summarized in the following inequality.
 //!
 //! ```text
 //! t <= h <= r <= t+R
@@ -202,30 +198,29 @@
 //!
 //! When we want to compare two indices we need to know their reltaive position
 //! within the ring e.g., the value modulo the size of the ring, as well as what
-//! epoch the indices are in. Combining the fact that there is a complete
-//! ordering across indices, and indices can only span a maximum of two epochs,
-//! this allows us to track epochs as a single bit quantity. All we need to know
-//! to compare two indicies is whether they are in the same or different epochs,
-//! the. Which specific indices are being compared allows us to determine which
-//! index is in the latter epoch. For example if we are comparing `t` and `h`
-//! and they are in different epochs, we know that `h` is in the later epoch
-//! because of the invariant `t` <= `h`.
+//! epoch the indices are in. Combining the facts that a) there is a complete
+//! ordering across indices, b) and indices can only span a maximum of two
+//! epochs - this allows us to track epochs as a single bit quantity. All we
+//! need to know to compare two indicies is whether they are in the same or
+//! different epochs. Which specific indices are being compared allows us to
+//! determine which index is in the latter epoch. For example if we are
+//! comparing `t` and `h` and they are in different epochs, we know that `h` is
+//! in the later epoch because of the invariant `t` <= `h`.
 //!
 //! Epoch Encoding
 //! ==============
 //!
 //! The single-bit representation of an epoch allows for a very efficient index
 //! encoding scheme that can be read and written to atomically. Being able to
-//! operate atomically on indices and their epochs is actually critically
-//! important for achieving a lock free ring.
+//! operate atomically on indices and their epochs is critically important for
+//! achieving a lock free ring.
 //!
 //! Consider a ring consumer enforcing the invariant `t <= h`. Only the consumer
-//! can move `t`, but a producer in another thread can move `h`. So if we the
-//! consumer read `h` at time `a` and then read the epoch for `h` at time `b`
-//! but `h` moved between `a` and `b`. Then the total representation of `h`
-//! we've collected (its value and its epoch) is invalid. To get a consistent
-//! total representation of `h` we would need to lock the index and epoch for
-//! `h`.
+//! can move `t`, but a producer in another thread can move `h`. So if the
+//! consumer reads `h` at time `a` and then reads the epoch for `h` at time `b`
+//! but `h` moved between `a` and `b`, then the total representation of `h`
+//! collected (its value and its epoch) is invalid. To get a consistent total
+//! representation of `h` we would need to lock the index and epoch for `h`.
 //!
 //! However, because the epoch is just a one-bit quantity, we use the leading
 //! bit of an index to encode an epoch. Doing this allows us to atomically load
@@ -238,84 +233,84 @@
 //!
 //! The following example demonstrates transferring 1.5 GB of data in 1500 byte
 //! frames across a memory mapped ring.
+//!
 //! ```rust
-//!   use std::sync::Arc;
-//!   use std::thread::{spawn, sleep};
-//!   use std::time::Duration;
-//!   use std::str::from_utf8;
+//! use std::sync::Arc;
+//! use std::thread::{spawn, sleep};
+//! use std::time::Duration;
+//! use std::str::from_utf8;
 //!
-//!   use xfr::*;
+//! use xfr::*;
 //!
-//!   use rand::Rng;
-//!   // Transfer 1,000,000 1500 byte frames (1.5 GB)
-//!   const R: usize = 1024;
-//!   const N: usize = 4096;
-//!   const F: usize = 1500;
-//!   const K: u32 = 1000000;
+//! use rand::Rng;
+//! // Transfer 1,000,000 1500 byte frames (1.5 GB)
+//! const R: usize = 1024;
+//! const N: usize = 4096;
+//! const F: usize = 1500;
+//! const K: u32 = 1000000;
 //!
-//!   let fb = Arc::new(FrameBuffer::<N, F>::new());
-//!   let (p, c) = ring::<R, N, F>(fb);
+//! let fb = Arc::new(FrameBuffer::<N, F>::new());
+//! let (p, c) = ring::<R, N, F>(fb);
 //!
-//!   let t1 = spawn(move|| {
-//!       // create test data we're going to send the full 1500 bytes per
-//!       // packet, but only bother writing a 4 byte integer in each packet.
-//!       let mut data = Vec::new();
-//!       for i in 0..K {
-//!           data.push(i.to_be_bytes());
-//!       }
+//! let t1 = spawn(move|| {
+//! // create test data we're going to send the full 1500 bytes per
+//! // packet, but only bother writing a 4 byte integer in each packet.
+//! let mut data = Vec::new();
+//! for i in 0..K {
+//!     data.push(i.to_be_bytes());
+//! }
 //!
-//!       let mut rng = rand::thread_rng();
-//!       let mut i = 0;
-//!       loop {
-//!           let count = usize::min(rng.gen_range(0..10), (K-i) as usize);
-//!           let fps = match p.reserve(count) {
-//!               Ok(fps) => fps,
-//!               Err(_) => continue,
-//!           };
-//!           for fp in fps {
-//!               p.write(fp, data[i as usize].as_slice());
-//!               i += 1;
-//!           }
-//!           p.produce(count).unwrap();
-//!           if i >= K {
-//!               break;
-//!           }
-//!       }
-//!       println!("producer finished");
-//!   });
+//! let mut rng = rand::thread_rng();
+//! let mut i = 0;
+//! loop {
+//!     let count = usize::min(rng.gen_range(0..10), (K-i) as usize);
+//!     let fps = match p.reserve(count) {
+//!         Ok(fps) => fps,
+//!         Err(_) => continue,
+//!     };
+//!     for fp in fps {
+//!         p.write(fp, data[i as usize].as_slice());
+//!         i += 1;
+//!     }
+//!     p.produce(count).unwrap();
+//!     if i >= K {
+//!         break;
+//!     }
+//! }
+//! println!("producer finished");
+//! });
 //!
-//!   let t2 = spawn(move|| {
-//!       let mut total = 0u32;
-//!       loop {
-//!           let mut count = 0;
-//!           let consumable = c.consumable();
-//!           for fp in consumable {
-//!               let content = c.read(fp);
-//!               let x = u32::from_be_bytes(content.try_into().unwrap());
-//!               assert_eq!(x, total);
-//!               total += 1;
-//!               count += 1;
-//!           }
-//!           if count == 0 {
-//!               continue
-//!           }
-//!           c.consume(count).unwrap();
-//!           if total >= K {
-//!               break;
-//!           }
-//!       }
-//!       println!("consumer finished");
-//!   });
+//! let t2 = spawn(move|| {
+//! let mut total = 0u32;
+//! loop {
+//!     let mut count = 0;
+//!     let consumable = c.consumable();
+//!     for fp in consumable {
+//!         let content = c.read(fp);
+//!         let x = u32::from_be_bytes(content.try_into().unwrap());
+//!         assert_eq!(x, total);
+//!         total += 1;
+//!         count += 1;
+//!     }
+//!     if count == 0 {
+//!         continue
+//!     }
+//!     c.consume(count).unwrap();
+//!     if total >= K {
+//!         break;
+//!     }
+//! }
+//! println!("consumer finished");
+//! });
 //!
-//!   t1.join().unwrap();
-//!   t2.join().unwrap();
-//!```
+//! t1.join().unwrap();
+//! t2.join().unwrap();
+//! ```
 
 use std::fmt;
 use std::sync::Arc;
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicU64, Ordering};
-
 
 /// A frame buffer holds an array of frames and an index that identifies the
 /// first allocatable frames. Frames are always allocated in a forward linear

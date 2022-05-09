@@ -6,3 +6,7 @@ Xfr is an atomic ring for processing memory-mapped frames.
 
 Xfr is pronounced "exfer".
 
+## Running tests
+
+- `cargo test`
+- `cargo test --release`
