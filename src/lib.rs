@@ -377,7 +377,9 @@ pub struct FrameBufferIterator<'a, const N: usize, const F: usize> {
     index: u64,
     count: u64,
 }
-impl<'a, const N: usize, const F: usize> Iterator for FrameBufferIterator<'a, N, F> {
+impl<'a, const N: usize, const F: usize> Iterator
+    for FrameBufferIterator<'a, N, F>
+{
     type Item = (usize, &'a Frame<F>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -419,7 +421,9 @@ impl<'a, const R: usize, const N: usize, const F: usize> Ring<R, N, F> {
     pub fn new(fb: Arc<FrameBuffer<N, F>>) -> Self {
         Self {
             buf: UnsafeCell::new(fb),
-            elements: UnsafeCell::new(vec![RingElement::default(); R].into_boxed_slice()),
+            elements: UnsafeCell::new(
+                vec![RingElement::default(); R].into_boxed_slice(),
+            ),
             head: AtomicU64::new(0),
             tail: AtomicU64::new(0),
             rsvd: AtomicU64::new(0),
@@ -427,7 +431,9 @@ impl<'a, const R: usize, const N: usize, const F: usize> Ring<R, N, F> {
     }
 }
 
-impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug for Ring<R, N, F> {
+impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug
+    for Ring<R, N, F>
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct(&format!("Ring<R={},N={},F={}>", R, N, F))
             .field("head", &self.head.load(Ordering::Relaxed))
@@ -470,7 +476,9 @@ pub struct RingIterator<const R: usize, const N: usize, const F: usize> {
     count: u64,
 }
 
-impl<const R: usize, const N: usize, const F: usize> fmt::Debug for RingIterator<R, N, F> {
+impl<const R: usize, const N: usize, const F: usize> fmt::Debug
+    for RingIterator<R, N, F>
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct(&format!("RingIterator<R={},N={},F={}>", R, N, F))
             .field("index", &self.index)
@@ -479,7 +487,9 @@ impl<const R: usize, const N: usize, const F: usize> fmt::Debug for RingIterator
     }
 }
 
-impl<const R: usize, const N: usize, const F: usize> Iterator for RingIterator<R, N, F> {
+impl<const R: usize, const N: usize, const F: usize> Iterator
+    for RingIterator<R, N, F>
+{
     type Item = RingElement;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -612,7 +622,9 @@ impl<const R: usize, const N: usize, const F: usize> RingProducer<R, N, F> {
     }
 }
 
-impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug for RingProducer<R, N, F> {
+impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug
+    for RingProducer<R, N, F>
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RingProducer")
             .field("ring", unsafe { &*self.ring.get() })
@@ -620,9 +632,15 @@ impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug for RingProd
     }
 }
 
-unsafe impl<const R: usize, const N: usize, const F: usize> Sync for RingProducer<R, N, F> {}
+unsafe impl<const R: usize, const N: usize, const F: usize> Sync
+    for RingProducer<R, N, F>
+{
+}
 
-unsafe impl<const R: usize, const N: usize, const F: usize> Send for RingProducer<R, N, F> {}
+unsafe impl<const R: usize, const N: usize, const F: usize> Send
+    for RingProducer<R, N, F>
+{
+}
 
 /// A [`RingConsumer`] provides read access to a [`Ring`].
 pub struct RingConsumer<const R: usize, const N: usize, const F: usize> {
@@ -704,7 +722,9 @@ impl<'a, const R: usize, const N: usize, const F: usize> RingConsumer<R, N, F> {
     }
 }
 
-impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug for RingConsumer<R, N, F> {
+impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug
+    for RingConsumer<R, N, F>
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RingConsumer")
             .field("ring", unsafe { &*self.ring.get() })
@@ -712,9 +732,15 @@ impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug for RingCons
     }
 }
 
-unsafe impl<const R: usize, const N: usize, const F: usize> Sync for RingConsumer<R, N, F> {}
+unsafe impl<const R: usize, const N: usize, const F: usize> Sync
+    for RingConsumer<R, N, F>
+{
+}
 
-unsafe impl<const R: usize, const N: usize, const F: usize> Send for RingConsumer<R, N, F> {}
+unsafe impl<const R: usize, const N: usize, const F: usize> Send
+    for RingConsumer<R, N, F>
+{
+}
 
 #[cfg(test)]
 mod tests {
