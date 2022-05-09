@@ -307,10 +307,10 @@
 //! t2.join().unwrap();
 //! ```
 
-use std::fmt;
-use std::sync::Arc;
 use std::cell::UnsafeCell;
+use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 /// A frame buffer holds an array of frames and an index that identifies the
 /// first allocatable frames. Frames are always allocated in a forward linear
@@ -324,19 +324,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// per second.
 pub struct FrameBuffer<const N: usize, const F: usize> {
     index: AtomicU64,
-    frames: UnsafeCell::<Box::<[Frame::<F>]>>,
+    frames: UnsafeCell<Box<[Frame<F>]>>,
 }
 
 impl<const N: usize, const F: usize> FrameBuffer<N, F> {
-
     pub fn new() -> Self {
-        Self{
+        Self {
             index: AtomicU64::new(0),
             frames: UnsafeCell::new(
                 (0..N)
                     .map(|_| Frame::<F>::new())
                     .collect::<Vec<_>>()
-                    .into_boxed_slice()
+                    .into_boxed_slice(),
             ),
         }
     }
@@ -349,22 +348,21 @@ impl<const N: usize, const F: usize> FrameBuffer<N, F> {
             count,
         }
     }
-
 }
 
-unsafe impl<const N: usize, const F: usize> Send for FrameBuffer<N, F> { }
-unsafe impl<const N: usize, const F: usize> Sync for FrameBuffer<N, F> { }
+unsafe impl<const N: usize, const F: usize> Send for FrameBuffer<N, F> {}
+unsafe impl<const N: usize, const F: usize> Sync for FrameBuffer<N, F> {}
 
 /// A Frame is a wrapper for a network data frame. The data inside is owned by
 /// this frame.
 pub struct Frame<const F: usize> {
-    data: UnsafeCell::<[u8; F]>,
+    data: UnsafeCell<[u8; F]>,
     len: usize,
 }
 
 impl<const F: usize> Frame<F> {
     pub fn new() -> Self {
-        Self{
+        Self {
             data: UnsafeCell::new([0u8; F]),
             len: 0,
         }
@@ -375,14 +373,12 @@ impl<const F: usize> Frame<F> {
 /// over from the end of the buffer to the beginning this iterator handles that
 /// seamlessly.
 pub struct FrameBufferIterator<'a, const N: usize, const F: usize> {
-    buf: UnsafeCell::<&'a FrameBuffer::<N, F>>,
+    buf: UnsafeCell<&'a FrameBuffer<N, F>>,
     index: u64,
     count: u64,
 }
-impl<'a, const N: usize, const F: usize>
-Iterator for  FrameBufferIterator<'a, N, F> {
-
-    type Item = (usize, &'a Frame::<F>);
+impl<'a, const N: usize, const F: usize> Iterator for FrameBufferIterator<'a, N, F> {
+    type Item = (usize, &'a Frame<F>);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.count == 0 {
@@ -397,7 +393,7 @@ Iterator for  FrameBufferIterator<'a, N, F> {
                 &*buf.frames.get()
             };
             Some((i, &frames[i]))
-        } 
+        }
     }
 }
 
@@ -411,8 +407,8 @@ Iterator for  FrameBufferIterator<'a, N, F> {
 /// underpin [`RingConsumer`] and [`RingProducer`] objects. Similar to channels
 /// these are always created in pairs by the [`ring`] function.
 pub struct Ring<const R: usize, const N: usize, const F: usize> {
-    buf: UnsafeCell::<Arc::<FrameBuffer::<N, F>>>,
-    elements: UnsafeCell::<Box::<[RingElement]>>,
+    buf: UnsafeCell<Arc<FrameBuffer<N, F>>>,
+    elements: UnsafeCell<Box<[RingElement]>>,
 
     head: AtomicU64,
     tail: AtomicU64,
@@ -420,29 +416,24 @@ pub struct Ring<const R: usize, const N: usize, const F: usize> {
 }
 
 impl<'a, const R: usize, const N: usize, const F: usize> Ring<R, N, F> {
-
-    pub fn new(fb: Arc::<FrameBuffer::<N, F>>) -> Self {
-        Self{
+    pub fn new(fb: Arc<FrameBuffer<N, F>>) -> Self {
+        Self {
             buf: UnsafeCell::new(fb),
-            elements: UnsafeCell::new(
-                vec![RingElement::default(); R].into_boxed_slice(),
-            ),
+            elements: UnsafeCell::new(vec![RingElement::default(); R].into_boxed_slice()),
             head: AtomicU64::new(0),
             tail: AtomicU64::new(0),
             rsvd: AtomicU64::new(0),
         }
     }
-
 }
 
-impl<'a, const R: usize, const N: usize, const F: usize> 
-fmt::Debug for Ring<R, N, F> {
+impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug for Ring<R, N, F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct(&format!("Ring<R={},N={},F={}>", R, N, F))
-         .field("head", &self.head.load(Ordering::Relaxed))
-         .field("tail", &self.tail.load(Ordering::Relaxed))
-         .field("rsvd", &self.rsvd.load(Ordering::Relaxed))
-         .finish()
+            .field("head", &self.head.load(Ordering::Relaxed))
+            .field("tail", &self.tail.load(Ordering::Relaxed))
+            .field("rsvd", &self.rsvd.load(Ordering::Relaxed))
+            .finish()
     }
 }
 
@@ -456,10 +447,8 @@ pub struct RingElement {
 /// The ring function creates a [`Ring`] object and returns a [`RingProducer`]
 /// and [`RingConsumer`] instance for interacting with the [`Ring`].
 pub fn ring<const R: usize, const N: usize, const F: usize>(
-    buf: Arc::<FrameBuffer::<N, F>>,
-)
--> (RingProducer<R, N, F>, RingConsumer<R, N, F>) {
-
+    buf: Arc<FrameBuffer<N, F>>,
+) -> (RingProducer<R, N, F>, RingConsumer<R, N, F>) {
     let r = Arc::new(Ring::new(buf));
 
     (
@@ -470,32 +459,27 @@ pub fn ring<const R: usize, const N: usize, const F: usize>(
             ring: UnsafeCell::new(r.clone()),
         },
     )
-
 }
 
 /// An iterator over a set of [`RingElement`]s. In the event that a series of
 /// elements rolls over from the end of the ring to the beginning, this iterator
 /// handles that seamlessly.
 pub struct RingIterator<const R: usize, const N: usize, const F: usize> {
-    ring: UnsafeCell::<Arc::<Ring<R, N, F>>>,
+    ring: UnsafeCell<Arc<Ring<R, N, F>>>,
     index: u64,
     count: u64,
 }
 
-
-impl<const R: usize, const N: usize, const F: usize>
-fmt::Debug for RingIterator<R, N, F> {
+impl<const R: usize, const N: usize, const F: usize> fmt::Debug for RingIterator<R, N, F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct(&format!("RingIterator<R={},N={},F={}>", R, N, F))
-         .field("index", &self.index)
-         .field("count", &self.count)
-         .finish()
+            .field("index", &self.index)
+            .field("count", &self.count)
+            .finish()
     }
 }
 
-impl<const R: usize, const N: usize, const F: usize>
-Iterator for RingIterator<R, N, F> {
-
+impl<const R: usize, const N: usize, const F: usize> Iterator for RingIterator<R, N, F> {
     type Item = RingElement;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -513,28 +497,24 @@ Iterator for RingIterator<R, N, F> {
                 &*ring.elements.get()
             };
             Some(elements[i])
-        } 
+        }
     }
 }
 
 /// A [`RingProducer`] provides write access to a [`Ring`].
 pub struct RingProducer<const R: usize, const N: usize, const F: usize> {
-    ring: UnsafeCell::<Arc::<Ring::<R, N, F>>>,
+    ring: UnsafeCell<Arc<Ring<R, N, F>>>,
 }
 
-impl<const R: usize, const N: usize, const F: usize>
-RingProducer<R, N, F> {
-
-    pub fn reserve(&self, count: usize) 
-    -> Result<RingIterator<R, N, F>, ()> {
-
-        let ring = unsafe{ &mut *self.ring.get() };
+impl<const R: usize, const N: usize, const F: usize> RingProducer<R, N, F> {
+    pub fn reserve(&self, count: usize) -> Result<RingIterator<R, N, F>, ()> {
+        let ring = unsafe { &mut *self.ring.get() };
 
         // Enforce ring invariant r < t+R
         let (t_epoch, t) = read_index(ring.tail.load(Ordering::Relaxed));
         let (mut r_epoch, r) = read_index(ring.rsvd.load(Ordering::Relaxed));
 
-        let v = r+(count as u64);
+        let v = r + (count as u64);
 
         // since t <= r, r and t being in different epochs means means r is an
         // epoch ahead of t and thus must be less than the modulated value of r.
@@ -543,14 +523,14 @@ RingProducer<R, N, F> {
             // again.
             if v > t {
                 //println!("reserve {} > {}", v, t);
-                return Err(())
+                return Err(());
             }
         } else {
             // We're in the same epoch so we can move forward up to t in the
             // next epoch.
             if v > (t + (R as u64)) {
                 println!("reserve {} > {}", v, t + (R as u64));
-                return Err(())
+                return Err(());
             }
         }
 
@@ -567,13 +547,13 @@ RingProducer<R, N, F> {
         ring.rsvd.store(vr, Ordering::Relaxed);
 
         // allocate some frames
-        let buf = unsafe{ &mut *ring.buf.get() };
+        let buf = unsafe { &mut *ring.buf.get() };
         let buf_iter = buf.alloc(count as u64);
 
         // assign frame addresses to ring elements
         let elements = unsafe { &mut *ring.elements.get() };
         for (i, (addr, _)) in buf_iter.enumerate() {
-            let idx = ((r as usize)+i) % R;
+            let idx = ((r as usize) + i) % R;
             //println!("R[{}] = {}", idx, addr);
             elements[idx].addr = addr;
         }
@@ -583,12 +563,10 @@ RingProducer<R, N, F> {
             index: r,
             count: count as u64,
         })
-
     }
 
     pub fn produce(&self, count: usize) -> Result<(), ()> {
-
-        let ring = unsafe{ &mut*self.ring.get() };
+        let ring = unsafe { &mut *self.ring.get() };
 
         // Enforce ring invariant h <= r
         let (r_epoch, mut r) = read_index(ring.rsvd.load(Ordering::Relaxed));
@@ -600,7 +578,7 @@ RingProducer<R, N, F> {
             r = r + R as u64;
         }
 
-        let v = h+(count as u64);
+        let v = h + (count as u64);
 
         if v > r {
             //println!("produce {}@{} > {}@{}", v, h_epoch, r, r_epoch);
@@ -623,56 +601,47 @@ RingProducer<R, N, F> {
     }
 
     pub fn write(&self, e: RingElement, buf: &[u8]) {
-        
         //println!("writing {} ({})", e.addr, buf.len());
 
-        let r = unsafe{ &mut *self.ring.get() };
-        let b = unsafe{ &mut *r.buf.get() };
-        let f = unsafe{ &mut *b.frames.get() };
+        let r = unsafe { &mut *self.ring.get() };
+        let b = unsafe { &mut *r.buf.get() };
+        let f = unsafe { &mut *b.frames.get() };
         let frame_data = unsafe { &mut *f[e.addr].data.get() };
         frame_data[..buf.len()].copy_from_slice(buf);
         f[e.addr].len = buf.len();
-
     }
-    
 }
 
-impl<'a, const R: usize, const N: usize, const F: usize> 
-fmt::Debug for RingProducer<R, N, F> {
+impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug for RingProducer<R, N, F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RingProducer")
-         .field("ring", unsafe{ &*self.ring.get() })
-         .finish()
+            .field("ring", unsafe { &*self.ring.get() })
+            .finish()
     }
 }
 
-unsafe impl<const R: usize, const N: usize, const F: usize> Sync 
-for RingProducer<R, N, F> {}
+unsafe impl<const R: usize, const N: usize, const F: usize> Sync for RingProducer<R, N, F> {}
 
-unsafe impl<const R: usize, const N: usize, const F: usize> Send
-for RingProducer<R, N, F> {}
+unsafe impl<const R: usize, const N: usize, const F: usize> Send for RingProducer<R, N, F> {}
 
 /// A [`RingConsumer`] provides read access to a [`Ring`].
 pub struct RingConsumer<const R: usize, const N: usize, const F: usize> {
-    ring: UnsafeCell::<Arc::<Ring::<R, N, F>>>,
+    ring: UnsafeCell<Arc<Ring<R, N, F>>>,
 }
 
 fn read_index(index: u64) -> (bool, u64) {
-    let epoch = ((1<<63) & index) != 0;
-    let value = (!(1<<63)) & index;
+    let epoch = ((1 << 63) & index) != 0;
+    let value = (!(1 << 63)) & index;
     (epoch, value)
 }
 
 fn toggle_epoch(index: u64) -> u64 {
-    index ^ (1<<63)
+    index ^ (1 << 63)
 }
 
-impl<'a, const R: usize, const N: usize, const F: usize>
-RingConsumer<R, N, F> {
-
+impl<'a, const R: usize, const N: usize, const F: usize> RingConsumer<R, N, F> {
     pub fn consume(&self, count: usize) -> Result<(), ()> {
-
-        let r = unsafe{ &mut*self.ring.get() };
+        let r = unsafe { &mut *self.ring.get() };
 
         // Enforce ring invariant t <= h
         let (h_epoch, mut h) = read_index(r.head.load(Ordering::Relaxed));
@@ -682,8 +651,8 @@ RingConsumer<R, N, F> {
             h = h + R as u64;
         }
 
-        let v = t+(count as u64);
-        
+        let v = t + (count as u64);
+
         if v > h {
             return Err(());
         }
@@ -705,8 +674,7 @@ RingConsumer<R, N, F> {
     }
 
     pub fn consumable(&self) -> RingIterator<R, N, F> {
-
-        let r = unsafe{ &mut*self.ring.get() };
+        let r = unsafe { &mut *self.ring.get() };
 
         // calculate the distance from h to t
         let (h_epoch, mut h) = read_index(r.head.load(Ordering::Relaxed));
@@ -716,53 +684,44 @@ RingConsumer<R, N, F> {
             h = h + R as u64;
         }
 
-        RingIterator::<R, N, F>{
+        RingIterator::<R, N, F> {
             ring: UnsafeCell::new(r.clone()),
             index: t,
             count: (h - t) as u64,
         }
-
     }
 
     pub fn read(&self, e: RingElement) -> &[u8] {
-
-
-        let r = unsafe{ &mut *self.ring.get() };
-        let b = unsafe{ &mut *r.buf.get() };
-        let f = unsafe{ &mut *b.frames.get() };
-        unsafe { 
+        let r = unsafe { &mut *self.ring.get() };
+        let b = unsafe { &mut *r.buf.get() };
+        let f = unsafe { &mut *b.frames.get() };
+        unsafe {
             let fr = &f[e.addr];
             //println!("reading {} ({})", e.addr, fr.len);
             let data = &*fr.data.get();
             &data[..fr.len]
         }
-
     }
-
-
 }
 
-impl<'a, const R: usize, const N: usize, const F: usize> 
-fmt::Debug for RingConsumer<R, N, F> {
+impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug for RingConsumer<R, N, F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RingConsumer")
-         .field("ring", unsafe{ &*self.ring.get() })
-         .finish()
+            .field("ring", unsafe { &*self.ring.get() })
+            .finish()
     }
 }
 
-unsafe impl<const R: usize, const N: usize, const F: usize> Sync 
-for RingConsumer<R, N, F> {}
+unsafe impl<const R: usize, const N: usize, const F: usize> Sync for RingConsumer<R, N, F> {}
 
-unsafe impl<const R: usize, const N: usize, const F: usize> Send
-for RingConsumer<R, N, F> {}
+unsafe impl<const R: usize, const N: usize, const F: usize> Send for RingConsumer<R, N, F> {}
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use std::thread::{spawn, sleep};
-    use std::time::Duration;
     use std::str::from_utf8;
+    use std::sync::Arc;
+    use std::thread::{sleep, spawn};
+    use std::time::Duration;
 
     use super::*;
 
@@ -785,13 +744,13 @@ mod tests {
         let fba = Arc::new(FrameBuffer::<1024, 1518>::new());
 
         let fb = fba.clone();
-        let t1 = spawn(move|| {
+        let t1 = spawn(move || {
             let x = fb.alloc(4);
             println!("t1: {}", x.count());
         });
 
         let fb = fba.clone();
-        let t2 = spawn(move|| {
+        let t2 = spawn(move || {
             let x = fb.alloc(7);
             println!("t2: {}", x.count());
         });
@@ -802,12 +761,10 @@ mod tests {
         println!("{}", fba.index.load(Ordering::Relaxed));
 
         assert_eq!(fba.index.load(Ordering::Relaxed), 11);
-
     }
 
     #[test]
     fn ring_a_ding_ding() {
-
         let banter = [
             b"do you know the muffin man?".as_slice(),
             b"the muffin man?",
@@ -819,8 +776,7 @@ mod tests {
         let fb = Arc::new(FrameBuffer::<1024, 1518>::new());
         let (producer, consumer) = ring::<64, 1024, 1518>(fb);
 
-        let t1 = spawn(move|| {
-
+        let t1 = spawn(move || {
             println!("Producer: @1 {:#?}", producer);
 
             let frame_pointers = producer.reserve(5).unwrap();
@@ -844,8 +800,7 @@ mod tests {
             println!("Producer: @3 {:#?}", producer);
         });
 
-        let t2 = spawn(move|| {
-
+        let t2 = spawn(move || {
             for _ in 0..10 {
                 sleep(Duration::from_secs(1));
 
@@ -872,21 +827,18 @@ mod tests {
             println!("Consumer: @2 {:#?}", consumer);
 
             assert_eq!(consumer.consumable().count(), 0);
-
         });
 
         t1.join().unwrap();
         t2.join().unwrap();
-
     }
 
     #[test]
     fn ring_rollover() {
-
         let fb = Arc::new(FrameBuffer::<8, 64>::new());
         let (p, c) = ring::<8, 8, 64>(fb);
 
-        let t1 = spawn(move|| {
+        let t1 = spawn(move || {
             let mut i = 0;
 
             let fps = p.reserve(8).unwrap();
@@ -904,10 +856,9 @@ mod tests {
                 i += 1;
             }
             p.produce(8).unwrap();
-
         });
 
-        let t2 = spawn(move|| {
+        let t2 = spawn(move || {
             let mut i = 0;
 
             sleep(Duration::from_millis(250));
@@ -933,10 +884,9 @@ mod tests {
 
             println!("Consumer: @2 {:#?}", c);
         });
-        
+
         t1.join().unwrap();
         t2.join().unwrap();
-
     }
 
     #[test]
@@ -950,7 +900,7 @@ mod tests {
         let fb = Arc::new(FrameBuffer::<N, F>::new());
         let (p, c) = ring::<R, N, F>(fb);
 
-        let t1 = spawn(move|| {
+        let t1 = spawn(move || {
             // create test data we're going to send the full 1500 bytes per
             // packet, but only bother writing a 4 byte integer in each packet.
             let mut data = Vec::new();
@@ -961,7 +911,7 @@ mod tests {
             let mut rng = rand::thread_rng();
             let mut i = 0;
             loop {
-                let count = usize::min(rng.gen_range(0..10), (K-i) as usize);
+                let count = usize::min(rng.gen_range(0..10), (K - i) as usize);
                 let fps = match p.reserve(count) {
                     Ok(fps) => fps,
                     Err(_) => continue,
@@ -979,7 +929,7 @@ mod tests {
             println!("producer finished");
         });
 
-        let t2 = spawn(move|| {
+        let t2 = spawn(move || {
             let mut total = 0u32;
             loop {
                 let mut count = 0;
@@ -990,14 +940,14 @@ mod tests {
                     let x = u32::from_be_bytes(content.try_into().unwrap());
                     //println!("{} ==> {}", total, x);
                     assert_eq!(x, total);
-                    
+
                     //println!("{} ==> {}", total, content.len());
 
                     total += 1;
                     count += 1;
                 }
                 if count == 0 {
-                    continue
+                    continue;
                 }
                 //println!("consuming {}", count);
                 //println!("{:?}", c);
