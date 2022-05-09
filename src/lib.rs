@@ -350,6 +350,12 @@ impl<const N: usize, const F: usize> FrameBuffer<N, F> {
     }
 }
 
+impl<const N: usize, const F: usize> Default for FrameBuffer<N, F> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 unsafe impl<const N: usize, const F: usize> Send for FrameBuffer<N, F> {}
 unsafe impl<const N: usize, const F: usize> Sync for FrameBuffer<N, F> {}
 
@@ -366,6 +372,12 @@ impl<const F: usize> Frame<F> {
             data: UnsafeCell::new([0u8; F]),
             len: 0,
         }
+    }
+}
+
+impl<const F: usize> Default for Frame<F> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -462,7 +474,7 @@ pub fn ring<const R: usize, const N: usize, const F: usize>(
             ring: UnsafeCell::new(r.clone()),
         },
         RingConsumer::<R, N, F> {
-            ring: UnsafeCell::new(r.clone()),
+            ring: UnsafeCell::new(r),
         },
     )
 }
@@ -517,7 +529,10 @@ pub struct RingProducer<const R: usize, const N: usize, const F: usize> {
 }
 
 impl<const R: usize, const N: usize, const F: usize> RingProducer<R, N, F> {
-    pub fn reserve(&self, count: usize) -> Result<RingIterator<R, N, F>, ()> {
+    pub fn reserve(
+        &self,
+        count: usize,
+    ) -> Result<RingIterator<R, N, F>, Error> {
         let ring = unsafe { &mut *self.ring.get() };
 
         // NOTE: There are two atomic reads here and then we perform a number of
@@ -552,14 +567,14 @@ impl<const R: usize, const N: usize, const F: usize> RingProducer<R, N, F> {
             // again.
             if v > t {
                 //println!("reserve {} > {}", v, t);
-                return Err(());
+                return Err(Error::NoSpace);
             }
         } else {
             // We're in the same epoch so we can move forward up to t in the
             // next epoch.
             if v > (t + (R as u64)) {
                 println!("reserve {} > {}", v, t + (R as u64));
-                return Err(());
+                return Err(Error::NoSpace);
             }
         }
 
@@ -594,7 +609,7 @@ impl<const R: usize, const N: usize, const F: usize> RingProducer<R, N, F> {
         })
     }
 
-    pub fn produce(&self, count: usize) -> Result<(), ()> {
+    pub fn produce(&self, count: usize) -> Result<(), Error> {
         let ring = unsafe { &mut *self.ring.get() };
 
         // Enforce ring invariant h <= r
@@ -604,14 +619,14 @@ impl<const R: usize, const N: usize, const F: usize> RingProducer<R, N, F> {
         // The index r always leads h, so if they have different epochs, r is in
         // the epoch ahead of h.
         if r_epoch != h_epoch {
-            r = r + R as u64;
+            r += R as u64;
         }
 
         let v = h + (count as u64);
 
         if v > r {
             //println!("produce {}@{} > {}@{}", v, h_epoch, r, r_epoch);
-            return Err(());
+            return Err(Error::NoSpace);
         }
 
         let mut vr = v % (R as u64);
@@ -672,7 +687,7 @@ fn toggle_epoch(index: u64) -> u64 {
 }
 
 impl<'a, const R: usize, const N: usize, const F: usize> RingConsumer<R, N, F> {
-    pub fn consume(&self, count: usize) -> Result<(), ()> {
+    pub fn consume(&self, count: usize) -> Result<(), Error> {
         let r = unsafe { &mut *self.ring.get() };
 
         // Enforce ring invariant t <= h
@@ -680,13 +695,13 @@ impl<'a, const R: usize, const N: usize, const F: usize> RingConsumer<R, N, F> {
         let (mut t_epoch, t) = read_index(r.tail.load(Ordering::Relaxed));
 
         if h_epoch != t_epoch {
-            h = h + R as u64;
+            h += R as u64;
         }
 
         let v = t + (count as u64);
 
         if v > h {
-            return Err(());
+            return Err(Error::NoSpace);
         }
 
         //TODO force R to be a power of 2 so we can use & to implement the modulo?
@@ -713,7 +728,7 @@ impl<'a, const R: usize, const N: usize, const F: usize> RingConsumer<R, N, F> {
         let (t_epoch, t) = read_index(r.tail.load(Ordering::Relaxed));
 
         if h_epoch != t_epoch {
-            h = h + R as u64;
+            h += R as u64;
         }
 
         RingIterator::<R, N, F> {
@@ -749,6 +764,11 @@ impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug
 unsafe impl<const R: usize, const N: usize, const F: usize> Send
     for RingConsumer<R, N, F>
 {
+}
+
+#[derive(Debug)]
+pub enum Error {
+    NoSpace, // Insufficient space in ring for request
 }
 
 #[cfg(test)]
