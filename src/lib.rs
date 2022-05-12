@@ -749,6 +749,7 @@ impl<'a, const R: usize, const N: usize, const F: usize> RingConsumer<R, N, F> {
         &data[..fr.len]
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub fn read_mut(&self, e: RingElement) -> &mut [u8] {
         let r = unsafe { &mut *self.ring.get() };
         let b = unsafe { &mut *r.buf.get() };
