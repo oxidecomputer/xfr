@@ -462,6 +462,12 @@ pub struct RingElement {
     addr: usize,
 }
 
+impl RingElement {
+    pub fn get_addr(&self) -> usize {
+        self.addr
+    }
+}
+
 /// The ring function creates a [`Ring`] object and returns a [`RingProducer`]
 /// and [`RingConsumer`] instance for interacting with the [`Ring`].
 pub fn ring<const R: usize, const N: usize, const F: usize>(
@@ -645,14 +651,28 @@ impl<const R: usize, const N: usize, const F: usize> RingProducer<R, N, F> {
     }
 
     pub fn write(&self, e: RingElement, buf: &[u8]) {
-        //println!("writing {} ({})", e.addr, buf.len());
-
+        /*
         let r = unsafe { &mut *self.ring.get() };
         let b = unsafe { &mut *r.buf.get() };
         let f = unsafe { &mut *b.frames.get() };
         let frame_data = unsafe { &mut *f[e.addr].data.get() };
         frame_data[..buf.len()].copy_from_slice(buf);
         f[e.addr].len = buf.len();
+        */
+        self.write_at(e, buf, 0);
+    }
+
+    pub fn write_at(&self, e: RingElement, buf: &[u8], offset: usize) {
+        //println!("writing {} ({})", e.addr, buf.len());
+        let begin = offset;
+        let end = offset + buf.len();
+
+        let r = unsafe { &mut *self.ring.get() };
+        let b = unsafe { &mut *r.buf.get() };
+        let f = unsafe { &mut *b.frames.get() };
+        let frame_data = unsafe { &mut *f[e.addr].data.get() };
+        frame_data[begin..end].copy_from_slice(buf);
+        f[e.addr].len += buf.len();
     }
 }
 
@@ -688,6 +708,7 @@ fn toggle_epoch(index: u64) -> u64 {
 
 impl<'a, const R: usize, const N: usize, const F: usize> RingConsumer<R, N, F> {
     pub fn consume(&self, count: usize) -> Result<(), Error> {
+        //println!("consume {}", count);
         let r = unsafe { &mut *self.ring.get() };
 
         // Enforce ring invariant t <= h
@@ -713,6 +734,17 @@ impl<'a, const R: usize, const N: usize, const F: usize> RingConsumer<R, N, F> {
         }
         if t_epoch {
             vr = toggle_epoch(vr);
+        }
+
+        //println!("h={}, t={}, h-t={}", h, t, h - t);
+
+        let fps = RingIterator::<R, N, F> {
+            ring: UnsafeCell::new(r.clone()),
+            index: t,
+            count: count as u64,
+        };
+        for fp in fps {
+            self.reset(fp);
         }
 
         r.tail.store(vr, Ordering::Relaxed);
@@ -749,6 +781,16 @@ impl<'a, const R: usize, const N: usize, const F: usize> RingConsumer<R, N, F> {
         &data[..fr.len]
     }
 
+    pub fn reset(&self, e: RingElement) {
+        //println!("reset {}", e.addr);
+        let r = unsafe { &mut *self.ring.get() };
+        let b = unsafe { &mut *r.buf.get() };
+        let f = unsafe { &mut *b.frames.get() };
+
+        let fr = &mut f[e.addr];
+        fr.len = 0;
+    }
+
     #[allow(clippy::mut_from_ref)]
     pub fn read_mut(&self, e: RingElement) -> &mut [u8] {
         let r = unsafe { &mut *self.ring.get() };
@@ -781,6 +823,14 @@ unsafe impl<const R: usize, const N: usize, const F: usize> Send
 pub enum Error {
     NoSpace, // Insufficient space in ring for request
 }
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl std::error::Error for Error {}
 
 #[cfg(test)]
 mod tests {
@@ -1002,9 +1052,10 @@ mod tests {
                 let consumable = c.consumable();
                 //println!("{:?}", consumable);
                 for fp in consumable {
+                    //println!("@@@ {}", fp.get_addr());
                     let content = c.read(fp);
                     let x = u32::from_be_bytes(content.try_into().unwrap());
-                    //println!("{} ==> {}", total, x);
+                    //println!("{}@{} ==> {}", total, fp.get_addr(), x);
                     assert_eq!(x, total);
 
                     //println!("{} ==> {}", total, content.len());
