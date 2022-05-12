@@ -748,6 +748,17 @@ impl<'a, const R: usize, const N: usize, const F: usize> RingConsumer<R, N, F> {
         let data = unsafe { &*fr.data.get() };
         &data[..fr.len]
     }
+
+    pub fn read_mut(&self, e: RingElement) -> &mut [u8] {
+        let r = unsafe { &mut *self.ring.get() };
+        let b = unsafe { &mut *r.buf.get() };
+        let f = unsafe { &mut *b.frames.get() };
+
+        let fr = &f[e.addr];
+        //println!("reading {} ({})", e.addr, fr.len);
+        let data = unsafe { &mut *fr.data.get() };
+        &mut data[..fr.len]
+    }
 }
 
 impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug
