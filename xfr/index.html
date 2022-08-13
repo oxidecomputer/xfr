@@ -1,0 +1,297 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="An atomic ring for processing memory-mapped frames."><meta name="keywords" content="rust, rustlang, rust-lang, xfr"><title>xfr - Rust</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" type="text/css" href="../normalize.css"><link rel="stylesheet" type="text/css" href="../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../ayu.css" disabled><link rel="stylesheet" type="text/css" href="../dark.css" disabled><link rel="stylesheet" type="text/css" href="../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../storage.js"></script><script src="../crates.js"></script><script defer src="../main.js"></script>
+    <noscript><link rel="stylesheet" href="../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../favicon.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle">&#9776;</button><a class="sidebar-logo" href="../xfr/index.html"><div class="logo-container"><img class="rust-logo" src="../rust-logo.svg" alt="logo"></div>
+        </a><h2 class="location"></h2>
+    </nav>
+    <nav class="sidebar"><a class="sidebar-logo" href="../xfr/index.html"><div class="logo-container"><img class="rust-logo" src="../rust-logo.svg" alt="logo"></div>
+        </a><h2 class="location"><a href="#">Crate xfr</a></h2><div class="sidebar-elems"><div class="block"><ul><li class="version">Version 0.1.0</li><li><a id="all-types" href="all.html">All Items</a></li></div></ul><section><div class="block"><ul><li><a href="#structs">Structs</a></li><li><a href="#enums">Enums</a></li><li><a href="#functions">Functions</a></li></ul></div></section><div id="sidebar-vars" data-name="xfr" data-ty="mod" data-relpath=""></div><script defer src="sidebar-items.js"></script></div></nav><main><div class="width-limiter"><div class="sub-container"><a class="sub-logo-container" href="../xfr/index.html"><img class="rust-logo" src="../rust-logo.svg" alt="logo"></a><nav class="sub"><div class="theme-picker hidden"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="22" height="22" alt="Pick another theme!" src="../brush.svg"></button><div id="theme-choices" role="menu"></div></div><form class="search-form"><div class="search-container"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../wheel.svg"></a></div></form></nav></div><section id="main-content" class="content"><div class="main-heading">
+    <h1 class="fqn"><span class="in-band">Crate <a class="mod" href="#">xfr</a><button id="copy-path" onclick="copy_path(this)" title="Copy item path to clipboard"><img src="../clipboard.svg" width="19" height="18" alt="Copy item path"></button></span></h1><span class="out-of-band"><a class="srclink" href="../src/xfr/lib.rs.html#7-1089">source</a> · <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">[<span class="inner">&#x2212;</span>]</a></span></div><details class="rustdoc-toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>An atomic ring for processing memory-mapped frames.</p>
+<p>This crate provides two primary data structures <a href="struct.Ring.html" title="Ring"><code>Ring</code></a> and
+<a href="struct.FrameBuffer.html" title="FrameBuffer"><code>FrameBuffer</code></a>. Buffers hold an array of frames and rings provide
+producer/consumer mechanics for implementing packet flows. The benefit of
+this combination of data structures is that to implement packet flows, data
+frames do not need to be moved or copied. Ring elements contain pointers to
+frames and ring elements are what’s moved around to implement packet flow.
+This general design is heavily inspired by Linux’s eXpress Data Path (XDP).
+Xfr Rings are lock-free providing a higher-performance more robust substrate
+than lock based rings.</p>
+<h2 id="basic-packet-flow"><a href="#basic-packet-flow">Basic packet flow</a></h2>
+<p>Let’s start with a simple packet flow example. In this scenario we have two
+data link interfaces. For each data link interface there is an external i/o
+driver that is responsible for taking packets off the wire and placing them
+in a buffer for further processing. The i/o driver is also responsible for
+taking buffered packets that are ready for egress and putting them on the
+wire. Packets transit between these two interfaces through a packet
+processing engine.</p>
+<p>The interface i/o drivers and the packet processing engine interact through
+a set of rings that provide access into an underlying frame buffer. In the
+diagram below each interface is connected to an ingress ring (upper) that it
+uses to buffer packets that are ready for further processing. Each interface
+is also connected to an egress ring (lower) that it consumes packets from
+that are ready to be put on the wire.</p>
+<div class="example-wrap"><pre class="language-text"><code>                       h
+                       t     r
+    *------* produce  *=======================* consume  *--------*
+    |      |---------&gt;|0A|0B|0C|  |  |  |  |  |---------&gt;|        |
+    | ifx0 |          *=======================*          |        |
+    |      |  consume *=======================*  produce |        |
+    |      |&lt;---------|  |  |  |  |  |  |  |  |&lt;---------|        |
+    *------*          *=======================*          |        |
+                                                         |        |
+                      *=======================*          |        |
+                      |00|01|02|03|04|05|06|07|          |        |
+                      *-----------------------*          |        |
+                      |08|09|0A|0B|0C|0D|0E|0F|          | Packet |
+                      *-----------------------*          | Engine |
+                      |10|11|12|13|14|15|16|17|          |        |
+                      *-----------------------*          |        |
+                      |18|19|1A|1B|1C|1D|1E|1F|          |        |
+                      *=======================*          |        |
+                                                         |        |
+    *------* produce  *=======================* consume  |        |
+    |      |---------&gt;|  |  |  |  |  |  |  |  |---------&gt;|        |
+    | ifx1 |          *=======================*          |        |
+    |      |  consume *=======================*  produce |        |
+    |      |&lt;---------|  |  |  |  |  |  |  |  |&lt;---------|        |
+    *------*          *=======================*          *--------*</code></pre></div>
+<p>The ingress and egress rings do not contain any packet frame data. Rather
+they contain an index into a frame buffer that holds packets while they are
+being processed. The act of packet processing happens over these
+frame-pointer ring elements. This means we do not need to move packet data
+around as it is processed.</p>
+<p>In the example above the producer has 3 frames to produce for processing.
+The first step it must take is reserving 3 frame pointers from the ingress
+ring buffer. This moves the <code>rsvd</code> index forward 3 positions. The interface
+driver can now modify frame pointers between the <code>head</code> index and the <code>rsvd</code>
+index. This is depicted in the diagram above by the <code>h</code> and <code>r</code> markers.</p>
+<p>Once the interface driver has a reserved region in the ingress ring buffer,
+it must allocate frames from the frame buffer (depicted in the center of the
+diagram). In this example the interface driver allocates 3 frames from the
+frame buffer and it gets back frame addresses <code>0A</code>, <code>0B</code> and <code>0C</code>. It then
+assigns these addresses to the frame pointer ring elements it has reserved.
+This is also depicted in the diagram above.</p>
+<p>The interface driver can now write packets to the frame buffer through the
+ring buffer pointers it owns. Once it has done that, it calls <code>produce(3)</code>
+on the ingress ring. This results in the <code>head</code> index moving forward 3
+positions.</p>
+<div class="example-wrap"><pre class="language-text"><code>                            h
+                      t     r
+   *------* produce  *=======================* consume  *--------*
+   |      |---------&gt;|0A|0B|0C|  |  |  |  |  |---------&gt;|        |
+   | ifx0 |          *=======================*          | Packet |
+   |      |  consume *=======================*  produce | Engine |
+   |      |&lt;---------|  |  |  |  |  |  |  |  |&lt;---------|        |
+   *------*          *=======================*          |  ...   |</code></pre></div>
+<p>This results in a space of 3 frame pointers between the tail depicted as the
+marker <code>t</code> in the diagrams, and the head <code>h</code>. The space between these two
+indices is the consumable space. This means that the packet engine now has
+ownership of these frames e.g. the act of producing frames is transfer of
+ownership from the producer to the consumer. When the packet engine has
+finished processing the frames, it can call <code>consume(3)</code> to move the tail
+index forward 3 frame pointers. At this point, assuming there have been no
+new packets produced, there are no frames to produce and no frames to
+consume on the ingress ring.</p>
+<div class="example-wrap"><pre class="language-text"><code>                            t
+                            h
+                            r
+   *------* produce  *=======================* consume  *--------*
+   |      |---------&gt;|0A|0B|0C|  |  |  |  |  |---------&gt;|        |
+   | ifx0 |          *=======================*          | Packet |
+   |      |  consume *=======================*  produce | Engine |
+   |      |&lt;---------|  |  |  |  |  |  |  |  |&lt;---------|        |
+   *------*          *=======================*          |  ...   |</code></pre></div>
+<p>Now how about egress? The process works the same in reverse on the egress
+ring. Here the packet engine is the producer and the interface driver is the
+consumer.</p>
+<div class="example-wrap"><pre class="language-text"><code>                            t
+                            h
+                            r
+   *------* produce  *=======================* consume  *--------*
+   |      |---------&gt;|0A|0B|0C|  |  |  |  |  |---------&gt;|        |
+   | ifx0 |          *=======================*          | Packet |
+   |      |  consume *=======================*  produce | Engine |
+   |      |&lt;---------|  |  |  |  |  |0C|0B|0A|&lt;---------|        |
+   *------*          *=======================*          |  ...   |
+                                     r      h
+                                            t</code></pre></div>
+<p>Here the packet engine starts by reserving 3 frame pointers on the egress
+ring as depicted by the <code>r</code> marker in the diagram above. Once reserved it
+writes the indices of the frames it has processed in those three frame
+pointer elements within the ring. Then it moves the head pointer forward
+with a <code>produce(3)</code> call</p>
+<div class="example-wrap"><pre class="language-text"><code>                            t
+                            h
+                            r
+   *------* produce  *=======================* consume  *--------*
+   |      |---------&gt;|0A|0B|0C|  |  |  |  |  |---------&gt;|        |
+   | ifx0 |          *=======================*          | Packet |
+   |      |  consume *=======================*  produce | Engine |
+   |      |&lt;---------|  |  |  |  |  |0C|0B|0A|&lt;---------|        |
+   *------*          *=======================*          |  ...   |
+                                     r      t
+                                     h</code></pre></div>
+<p>The interface driver now owns the frames between the head and tail indices.
+It takes the referenced frames and puts them on the wire. Then it calls
+<code>consume(3)</code> resulting in the tail index catching up with head.</p>
+<div class="example-wrap"><pre class="language-text"><code>                            t
+                            h
+                            r
+   *------* produce  *=======================* consume  *--------*
+   |      |---------&gt;|0A|0B|0C|  |  |  |  |  |---------&gt;|        |
+   | ifx0 |          *=======================*          | Packet |
+   |      |  consume *=======================*  produce | Engine |
+   |      |&lt;---------|  |  |  |  |  |0C|0B|0A|&lt;---------|        |
+   *------*          *=======================*          |  ...   |
+                                     r
+                                     h
+                                     t</code></pre></div>
+<p>Tada! We’ve processed a pile of packets without copying any frame data. The
+rings are a thread-safe mechanism for producers and consumers of packet
+frames to exchange ownership of frames through pointers.</p>
+<h2 id="ring-invariants"><a href="#ring-invariants">Ring invariants</a></h2>
+<p>The Ring data structure is able to work in a lock-free way because of a few
+key invariants, combined with a notion of epochs. When an index rolls over
+to the beginning of the ring it enters a new epoch of that ring. The
+ring invariants can be summarized in the following inequality.</p>
+<div class="example-wrap"><pre class="language-text"><code>t &lt;= h &lt;= r &lt;= t+R</code></pre></div>
+<p>Taking each of thse in turn</p>
+<ul>
+<li><code>t &lt;= h</code>: The tail can never eclipse the head.</li>
+<li><code>h &lt;= r</code>: The head can never eclipse the reserve.</li>
+<li><code>r &lt;= t+R</code>: The reserve can never eclipse the tail in the next epoch.</li>
+</ul>
+<p>The last constraint also insures that the indices span no more than two
+epochs.</p>
+<p>When we want to compare two indices we need to know their reltaive position
+within the ring e.g., the value modulo the size of the ring, as well as what
+epoch the indices are in. Combining the facts that a) there is a complete
+ordering across indices, b) and indices can only span a maximum of two
+epochs - this allows us to track epochs as a single bit quantity. All we
+need to know to compare two indicies is whether they are in the same or
+different epochs. Which specific indices are being compared allows us to
+determine which index is in the latter epoch. For example if we are
+comparing <code>t</code> and <code>h</code> and they are in different epochs, we know that <code>h</code> is
+in the later epoch because of the invariant <code>t</code> &lt;= <code>h</code>.</p>
+<h2 id="epoch-encoding"><a href="#epoch-encoding">Epoch Encoding</a></h2>
+<p>The single-bit representation of an epoch allows for a very efficient index
+encoding scheme that can be read and written to atomically. Being able to
+operate atomically on indices and their epochs is critically important for
+achieving a lock free ring.</p>
+<p>Consider a ring consumer enforcing the invariant <code>t &lt;= h</code>. Only the consumer
+can move <code>t</code>, but a producer in another thread can move <code>h</code>. So if the
+consumer reads <code>h</code> at time <code>a</code> and then reads the epoch for <code>h</code> at time <code>b</code>
+but <code>h</code> moved between <code>a</code> and <code>b</code>, then the total representation of <code>h</code>
+collected (its value and its epoch) is invalid. To get a consistent total
+representation of <code>h</code> we would need to lock the index and epoch for <code>h</code>.</p>
+<p>However, because the epoch is just a one-bit quantity, we use the leading
+bit of an index to encode an epoch. Doing this allows us to atomically load
+the index and it’s epoch. Ring indices are 64 bit values, so this
+effectively makes them 63 bit values. I don’t think we’ll be in need of
+Gangam style rings exceeding 9 quintillion elements any time soon.</p>
+<h2 id="usage"><a href="#usage">Usage</a></h2>
+<p>The following example demonstrates transferring 1.5 GB of data in 1500 byte
+frames across a memory mapped ring.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use</span> <span class="ident">std::sync::Arc</span>;
+<span class="kw">use</span> <span class="ident">std::thread</span>::{<span class="ident">spawn</span>, <span class="ident">sleep</span>};
+<span class="kw">use</span> <span class="ident">std::time::Duration</span>;
+<span class="kw">use</span> <span class="ident">std::str::from_utf8</span>;
+
+<span class="kw">use</span> <span class="ident">xfr</span>::<span class="kw-2">*</span>;
+
+<span class="kw">use</span> <span class="ident">rand::Rng</span>;
+<span class="comment">// Transfer 1,000,000 1500 byte frames (1.5 GB)</span>
+<span class="kw">const</span> <span class="ident">R</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">1024</span>;
+<span class="kw">const</span> <span class="ident">N</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">4096</span>;
+<span class="kw">const</span> <span class="ident">F</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">1500</span>;
+<span class="kw">const</span> <span class="ident">K</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">1000000</span>;
+
+<span class="kw">let</span> <span class="ident">fb</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident">FrameBuffer</span>::<span class="op">&lt;</span><span class="ident">N</span>, <span class="ident">F</span><span class="op">&gt;</span><span class="ident">::new</span>());
+<span class="kw">let</span> (<span class="ident">p</span>, <span class="ident">c</span>) <span class="op">=</span> <span class="ident">ring</span>::<span class="op">&lt;</span><span class="ident">R</span>, <span class="ident">N</span>, <span class="ident">F</span><span class="op">&gt;</span>(<span class="ident">fb</span>);
+
+<span class="kw">let</span> <span class="ident">t1</span> <span class="op">=</span> <span class="ident">spawn</span>(<span class="kw">move</span><span class="op">|</span><span class="op">|</span> {
+<span class="comment">// create test data we&#39;re going to send the full 1500 bytes per</span>
+<span class="comment">// packet, but only bother writing a 4 byte integer in each packet.</span>
+<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">data</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
+<span class="kw">for</span> <span class="ident">i</span> <span class="kw">in</span> <span class="number">0</span>..<span class="ident">K</span> {
+    <span class="ident">data</span>.<span class="ident">push</span>(<span class="ident">i</span>.<span class="ident">to_be_bytes</span>());
+}
+
+<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">rng</span> <span class="op">=</span> <span class="ident">rand::thread_rng</span>();
+<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">i</span> <span class="op">=</span> <span class="number">0</span>;
+<span class="kw">loop</span> {
+    <span class="kw">let</span> <span class="ident">count</span> <span class="op">=</span> <span class="ident">usize::min</span>(<span class="ident">rng</span>.<span class="ident">gen_range</span>(<span class="number">0</span>..<span class="number">10</span>), (<span class="ident">K</span><span class="op">-</span><span class="ident">i</span>) <span class="kw">as</span> <span class="ident">usize</span>);
+    <span class="kw">let</span> <span class="ident">fps</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">p</span>.<span class="ident">reserve</span>(<span class="ident">count</span>) {
+        <span class="prelude-val">Ok</span>(<span class="ident">fps</span>) =&gt; <span class="ident">fps</span>,
+        <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; <span class="kw">continue</span>,
+    };
+    <span class="kw">for</span> <span class="ident">fp</span> <span class="kw">in</span> <span class="ident">fps</span> {
+        <span class="ident">p</span>.<span class="ident">write</span>(<span class="ident">fp</span>, <span class="ident">data</span>[<span class="ident">i</span> <span class="kw">as</span> <span class="ident">usize</span>].<span class="ident">as_slice</span>());
+        <span class="ident">i</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
+    }
+    <span class="ident">p</span>.<span class="ident">produce</span>(<span class="ident">count</span>).<span class="ident">unwrap</span>();
+    <span class="kw">if</span> <span class="ident">i</span> <span class="op">&gt;</span><span class="op">=</span> <span class="ident">K</span> {
+        <span class="kw">break</span>;
+    }
+}
+<span class="macro">println!</span>(<span class="string">&quot;producer finished&quot;</span>);
+});
+
+<span class="kw">let</span> <span class="ident">t2</span> <span class="op">=</span> <span class="ident">spawn</span>(<span class="kw">move</span><span class="op">|</span><span class="op">|</span> {
+<span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">total</span> <span class="op">=</span> <span class="number">0u32</span>;
+<span class="kw">loop</span> {
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">count</span> <span class="op">=</span> <span class="number">0</span>;
+    <span class="kw">let</span> <span class="ident">consumable</span> <span class="op">=</span> <span class="ident">c</span>.<span class="ident">consumable</span>();
+    <span class="kw">for</span> <span class="ident">fp</span> <span class="kw">in</span> <span class="ident">consumable</span> {
+        <span class="kw">let</span> <span class="ident">content</span> <span class="op">=</span> <span class="ident">c</span>.<span class="ident">read</span>(<span class="ident">fp</span>);
+        <span class="kw">let</span> <span class="ident">x</span> <span class="op">=</span> <span class="ident">u32::from_be_bytes</span>(<span class="ident">content</span>.<span class="ident">try_into</span>().<span class="ident">unwrap</span>());
+        <span class="macro">assert_eq!</span>(<span class="ident">x</span>, <span class="ident">total</span>);
+        <span class="ident">total</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
+        <span class="ident">count</span> <span class="op">+</span><span class="op">=</span> <span class="number">1</span>;
+    }
+    <span class="kw">if</span> <span class="ident">count</span> <span class="op">==</span> <span class="number">0</span> {
+        <span class="kw">continue</span>
+    }
+    <span class="ident">c</span>.<span class="ident">consume</span>(<span class="ident">count</span>).<span class="ident">unwrap</span>();
+    <span class="kw">if</span> <span class="ident">total</span> <span class="op">&gt;</span><span class="op">=</span> <span class="ident">K</span> {
+        <span class="kw">break</span>;
+    }
+}
+<span class="macro">println!</span>(<span class="string">&quot;consumer finished&quot;</span>);
+});
+
+<span class="ident">t1</span>.<span class="ident">join</span>().<span class="ident">unwrap</span>();
+<span class="ident">t2</span>.<span class="ident">join</span>().<span class="ident">unwrap</span>();</code></pre></div>
+</div></details><h2 id="structs" class="small-section-header"><a href="#structs">Structs</a></h2>
+<div class="item-table"><div class="item-row"><div class="item-left module-item"><a class="struct" href="struct.Frame.html" title="xfr::Frame struct">Frame</a></div><div class="item-right docblock-short"><p>A Frame is a wrapper for a network data frame. The data inside is owned by
+this frame.</p>
+</div></div><div class="item-row"><div class="item-left module-item"><a class="struct" href="struct.FrameBuffer.html" title="xfr::FrameBuffer struct">FrameBuffer</a></div><div class="item-right docblock-short"><p>A frame buffer holds an array of frames and an index that identifies the
+first allocatable frames. Frames are always allocated in a forward linear
+fashion. There is no tracking of allocated frames. If your frame gets
+overwritten, it’s because you held on to it too long. Users of a frame
+buffer should ensure that the buffer is sufficiently sized to allow external
+holders of frames to do what they must with them before they are reallocated
+e.g., frames come with an expiration of one ring epoch. This is essentially
+a big linear ring of frames. The focus is on fast allocation. Allocations
+against this frame are expected at rates in the millions to tens of millions
+per second.</p>
+</div></div><div class="item-row"><div class="item-left module-item"><a class="struct" href="struct.FrameBufferIterator.html" title="xfr::FrameBufferIterator struct">FrameBufferIterator</a></div><div class="item-right docblock-short"><p>An iterator over a set of frames. In the event that a series of frames rolls
+over from the end of the buffer to the beginning this iterator handles that
+seamlessly.</p>
+</div></div><div class="item-row"><div class="item-left module-item"><a class="struct" href="struct.Ring.html" title="xfr::Ring struct">Ring</a></div><div class="item-right docblock-short"><p>A Ring arbitrates access to a frame buffer. Rings are directional, there are
+producers that allocate and modify and produce elements on one side of a
+ring and consumers that read and consume frames on the other side of a ring.
+A ring contains ring elements which are essentially a wrapper around a
+FrameBuffer specific address.</p>
+</div></div><div class="item-row"><div class="item-left module-item"><a class="struct" href="struct.RingConsumer.html" title="xfr::RingConsumer struct">RingConsumer</a></div><div class="item-right docblock-short"><p>A <a href="struct.RingConsumer.html" title="RingConsumer"><code>RingConsumer</code></a> provides read access to a <a href="struct.Ring.html" title="Ring"><code>Ring</code></a>.</p>
+</div></div><div class="item-row"><div class="item-left module-item"><a class="struct" href="struct.RingElement.html" title="xfr::RingElement struct">RingElement</a></div><div class="item-right docblock-short"><p>A wring element is a wrapper around an address to a <a href="struct.Frame.html" title="Frame"><code>Frame</code></a> within a
+<a href="struct.FrameBuffer.html" title="FrameBuffer"><code>FrameBuffer</code></a>.</p>
+</div></div><div class="item-row"><div class="item-left module-item"><a class="struct" href="struct.RingIterator.html" title="xfr::RingIterator struct">RingIterator</a></div><div class="item-right docblock-short"><p>An iterator over a set of <a href="struct.RingElement.html" title="RingElement"><code>RingElement</code></a>s. In the event that a series of
+elements rolls over from the end of the ring to the beginning, this iterator
+handles that seamlessly.</p>
+</div></div><div class="item-row"><div class="item-left module-item"><a class="struct" href="struct.RingProducer.html" title="xfr::RingProducer struct">RingProducer</a></div><div class="item-right docblock-short"><p>A <a href="struct.RingProducer.html" title="RingProducer"><code>RingProducer</code></a> provides write access to a <a href="struct.Ring.html" title="Ring"><code>Ring</code></a>.</p>
+</div></div></div><h2 id="enums" class="small-section-header"><a href="#enums">Enums</a></h2>
+<div class="item-table"><div class="item-row"><div class="item-left module-item"><a class="enum" href="enum.Error.html" title="xfr::Error enum">Error</a></div><div class="item-right docblock-short"></div></div></div><h2 id="functions" class="small-section-header"><a href="#functions">Functions</a></h2>
+<div class="item-table"><div class="item-row"><div class="item-left module-item"><a class="fn" href="fn.ring.html" title="xfr::ring fn">ring</a></div><div class="item-right docblock-short"><p>The ring function creates a <a href="struct.Ring.html" title="Ring"><code>Ring</code></a> object and returns a <a href="struct.RingProducer.html" title="RingProducer"><code>RingProducer</code></a>
+and <a href="struct.RingConsumer.html" title="RingConsumer"><code>RingConsumer</code></a> instance for interacting with the <a href="struct.Ring.html" title="Ring"><code>Ring</code></a>.</p>
+</div></div></div></section></div></main><div id="rustdoc-vars" data-root-path="../" data-current-crate="xfr" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.62.1 (e092d0b6b 2022-07-16)" ></div>
+</body></html>
