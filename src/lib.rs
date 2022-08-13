@@ -429,7 +429,7 @@ pub struct Ring<const R: usize, const N: usize, const F: usize> {
     rsvd: AtomicU64,
 }
 
-impl<'a, const R: usize, const N: usize, const F: usize> Ring<R, N, F> {
+impl<const R: usize, const N: usize, const F: usize> Ring<R, N, F> {
     pub fn new(fb: Arc<FrameBuffer<N, F>>) -> Self {
         Self {
             buf: UnsafeCell::new(fb),
@@ -443,7 +443,7 @@ impl<'a, const R: usize, const N: usize, const F: usize> Ring<R, N, F> {
     }
 }
 
-impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug
+impl<const R: usize, const N: usize, const F: usize> fmt::Debug
     for Ring<R, N, F>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -676,7 +676,7 @@ impl<const R: usize, const N: usize, const F: usize> RingProducer<R, N, F> {
     }
 }
 
-impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug
+impl<const R: usize, const N: usize, const F: usize> fmt::Debug
     for RingProducer<R, N, F>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -706,7 +706,7 @@ fn toggle_epoch(index: u64) -> u64 {
     index ^ (1 << 63)
 }
 
-impl<'a, const R: usize, const N: usize, const F: usize> RingConsumer<R, N, F> {
+impl<const R: usize, const N: usize, const F: usize> RingConsumer<R, N, F> {
     pub fn consume(&self, count: usize) -> Result<(), Error> {
         //println!("consume {}", count);
         let r = unsafe { &mut *self.ring.get() };
@@ -804,7 +804,7 @@ impl<'a, const R: usize, const N: usize, const F: usize> RingConsumer<R, N, F> {
     }
 }
 
-impl<'a, const R: usize, const N: usize, const F: usize> fmt::Debug
+impl<const R: usize, const N: usize, const F: usize> fmt::Debug
     for RingConsumer<R, N, F>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
